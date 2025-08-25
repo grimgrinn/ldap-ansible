@@ -1,0 +1,91 @@
+---
+- name: Установка OpenLDAP
+  hosts: ubuntu
+  become: yes
+  vars_files:
+    - vars.yml
+
+  tasks:
+    # 1. Установка пакетов
+    - name: Установка slapd и ldap-utils
+      apt:
+        name:
+          - slapd
+          - ldap-utils
+        state: present
+        update_cache: yes
+
+    # 2. Автоматическая настройка через debconf
+    - name: Настройка debconf для автоматической установки
+      debconf:
+        name: slapd
+        question: "{{ item.question }}"
+        value: "{{ item.value }}"
+        vtype: "{{ item.vtype }}"
+      loop:
+        - { question: 'slapd/password1', value: '{{ ldap_admin_password }}', vtype: 'password' }
+        - { question: 'slapd/password2', value: '{{ ldap_admin_password }}', vtype: 'password' }
+        - { question: 'slapd/domain', value: '{{ ldap_domain }}', vtype: 'string' }
+        - { question: 'shared/organization', value: '{{ ldap_organization }}', vtype: 'string' }
+
+    # 3. Переконфигурация slapd
+    - name: Переконфигурация slapd
+      command: dpkg-reconfigure -f noninteractive slapd
+      notify: restart slapd
+
+    # 4. Ждем запуска сервера
+    - name: Ожидание запуска LDAP
+      wait_for:
+        port: 389
+        delay: 5
+        timeout: 30
+
+    # 5. Создаем базовую структуру через ldapadd
+    - name: Создание базового LDIF файла
+      copy:
+        content: |
+          dn: ou=People,{{ ldap_base_dn }}
+          objectClass: organizationalUnit
+          ou: People
+
+          dn: ou=Groups,{{ ldap_base_dn }}
+          objectClass: organizationalUnit
+          ou: Groups
+        dest: /tmp/base.ldif
+
+    # 6. Добавляем базовую структуру
+    - name: Добавление базовой структуры в LDAP
+      shell: |
+        ldapadd -x -H ldap://localhost -D "cn=admin,{{ ldap_base_dn }}" -w "{{ ldap_admin_password }}" -f /tmp/base.ldif
+      args:
+        creates: /tmp/base_added
+
+    # 7. Создаем LDIF файл с пользователями и группами
+    - name: Создание LDIF файла с пользователями и группами
+      template:
+        src: templates/users_groups.ldif.j2
+        dest: /tmp/users_groups.ldif
+
+    # 8. Добавляем пользователей и группы
+    - name: Добавление пользователей и групп в LDAP
+      shell: |
+        ldapadd -x -H ldap://localhost -D "cn=admin,{{ ldap_base_dn }}" -w "{{ ldap_admin_password }}" -f /tmp/users_groups.ldif
+      args:
+        creates: /tmp/users_groups_added
+
+    # 9. Проверка
+    - name: Проверка установки
+      shell: |
+        ldapsearch -x -H ldap://localhost -b "{{ ldap_base_dn }}" -D "cn=admin,{{ ldap_base_dn }}" -w "{{ ldap_admin_password }}" | grep -c "dn:"
+      register: ldap_entries
+      changed_when: false
+
+    - name: Вывод результата
+      debug:
+        msg: "В LDAP найдено {{ ldap_entries.stdout }} записей"
+
+  handlers:
+    - name: restart slapd
+      systemd:
+        name: slapd
+        state: restarted

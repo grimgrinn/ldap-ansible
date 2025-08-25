@@ -1,0 +1,44 @@
+# Пользователь 1
+dn: uid={{ ldap_users[0].username }},ou=People,{{ ldap_base_dn }}
+objectClass: inetOrgPerson
+objectClass: posixAccount
+objectClass: shadowAccount
+uid: {{ ldap_users[0].username }}
+cn: {{ ldap_users[0].givenname }} {{ ldap_users[0].surname }}
+sn: {{ ldap_users[0].surname }}
+givenName: {{ ldap_users[0].givenname }}
+userPassword: {{ ldap_users[0].password }}
+loginShell: /bin/bash
+uidNumber: {{ ldap_users[0].uid }}
+gidNumber: {{ ldap_users[0].uid }}
+homeDirectory: /home/{{ ldap_users[0].username }}
+
+# Пользователь 2
+dn: uid={{ ldap_users[1].username }},ou=People,{{ ldap_base_dn }}
+objectClass: inetOrgPerson
+objectClass: posixAccount
+objectClass: shadowAccount
+uid: {{ ldap_users[1].username }}
+cn: {{ ldap_users[1].givenname }} {{ ldap_users[1].surname }}
+sn: {{ ldap_users[1].surname }}
+givenName: {{ ldap_users[1].givenname }}
+userPassword: {{ ldap_users[1].password }}
+loginShell: /bin/bash
+uidNumber: {{ ldap_users[1].uid }}
+gidNumber: {{ ldap_users[1].uid }}
+homeDirectory: /home/{{ ldap_users[1].username }}
+
+# Группа developers
+dn: cn={{ ldap_groups[0].name }},ou=Groups,{{ ldap_base_dn }}
+objectClass: posixGroup
+cn: {{ ldap_groups[0].name }}
+gidNumber: {{ ldap_groups[0].gid }}
+memberUid: {{ ldap_users[0].username }}
+memberUid: {{ ldap_users[1].username }}
+
+# Группа admins
+dn: cn={{ ldap_groups[1].name }},ou=Groups,{{ ldap_base_dn }}
+objectClass: posixGroup
+cn: {{ ldap_groups[1].name }}
+gidNumber: {{ ldap_groups[1].gid }}
+memberUid: {{ ldap_users[0].username }}

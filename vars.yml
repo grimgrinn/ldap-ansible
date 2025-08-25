@@ -1,0 +1,27 @@
+---
+ldap_admin_password: "superparol"
+ldap_domain: "example.com"
+ldap_organization: "Example Inc"
+ldap_base_dn: "dc=example,dc=com"
+
+# Пользователи
+ldap_users:
+  - username: "user1"
+    givenname: "Иван"
+    surname: "Петров"
+    password: "user1pass"
+    uid: 1001
+  - username: "user2"
+    givenname: "Мария"
+    surname: "Сидорова"
+    password: "user2pass"
+    uid: 1002
+
+# Группы
+ldap_groups:
+  - name: "developers"
+    gid: 2001
+    members: ["user1", "user2"]
+  - name: "admins"
+    gid: 2002
+    members: ["user1"]
