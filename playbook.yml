@@ -6,12 +6,20 @@
     - vars.yml
 
   tasks:
+    # 0. Для проверки, установлен ли уже slapd
+    - name: Проверка установки slapd
+      package_facts:
+        manager: auto
+      changed_when: false
+
     # 1. Установка пакетов
     - name: Установка slapd и ldap-utils
       apt:
         name:
           - slapd
           - ldap-utils
+          - debconf
+          - debconf-utils
         state: present
         update_cache: yes
 
@@ -27,10 +35,12 @@
         - { question: 'slapd/password2', value: '{{ ldap_admin_password }}', vtype: 'password' }
         - { question: 'slapd/domain', value: '{{ ldap_domain }}', vtype: 'string' }
         - { question: 'shared/organization', value: '{{ ldap_organization }}', vtype: 'string' }
+      when: not ansible_facts.packages['slapd']
 
     # 3. Переконфигурация slapd
     - name: Переконфигурация slapd
       command: dpkg-reconfigure -f noninteractive slapd
+      when: not ansible_facts.packages['slapd']
       notify: restart slapd
 
     # 4. Ждем запуска сервера
@@ -40,7 +50,15 @@
         delay: 5
         timeout: 30
 
-    # 5. Создаем базовую структуру через ldapadd
+    #5. Проверяем, существует ли уже базовая структура
+    - name: Проверка существования базовой структуры LDAP
+      shell: |
+        ldapsearch -x -H ldap://localhost -b "ou=People,{{ ldap_base_dn }}" -D "cn=admin,{{ ldap_base_dn }}" -w "{{ ldap_admin_password }}" -s base 2>/dev/null | grep -q "dn: ou=People" && echo "exists" || echo "not exists"
+      register: base_structure_check
+      changed_when: false
+      ignore_errors: yes
+
+    # 6. Создаем базовую структуру через ldapadd если ее нет
     - name: Создание базового LDIF файла
       copy:
         content: |
@@ -52,28 +70,33 @@
           objectClass: organizationalUnit
           ou: Groups
         dest: /tmp/base.ldif
+      when: "'exists' not in base_structure_check.stdout"
 
-    # 6. Добавляем базовую структуру
+    # 7. Добавляем базовую структуру
     - name: Добавление базовой структуры в LDAP
       shell: |
         ldapadd -x -H ldap://localhost -D "cn=admin,{{ ldap_base_dn }}" -w "{{ ldap_admin_password }}" -f /tmp/base.ldif
       args:
         creates: /tmp/base_added
+      when: "'exists' not in base_structure_check.stdout"
 
-    # 7. Создаем LDIF файл с пользователями и группами
+    - name: Удаляем старый LDIF файл
+      file:
+        path: /tmp/users_groups.ldif
+        state: absent
+
+    # 8. Создаем LDIF файл 
     - name: Создание LDIF файла с пользователями и группами
       template:
         src: templates/users_groups.ldif.j2
         dest: /tmp/users_groups.ldif
 
-    # 8. Добавляем пользователей и группы
+    # 9. Добавляем только отсутствующих пользователей
     - name: Добавление пользователей и групп в LDAP
       shell: |
-        ldapadd -x -H ldap://localhost -D "cn=admin,{{ ldap_base_dn }}" -w "{{ ldap_admin_password }}" -f /tmp/users_groups.ldif
-      args:
-        creates: /tmp/users_groups_added
+        ldapadd -x -H ldap://localhost -D "cn=admin,{{ ldap_base_dn }}" -w "{{ ldap_admin_password }}" -f /tmp/users_groups.ldif || true
 
-    # 9. Проверка
+    # 10. Проверка
     - name: Проверка установки
       shell: |
         ldapsearch -x -H ldap://localhost -b "{{ ldap_base_dn }}" -D "cn=admin,{{ ldap_base_dn }}" -w "{{ ldap_admin_password }}" | grep -c "dn:"
